@@ -1,0 +1,66 @@
+THỐNG KÊ CƠ BẢN
+
+MEAN
+
+Mean là giá trị trung bình cộng của một tập dữ liệu.
+
+Để tính mean, ta cộng tất cả các giá trị trong tập dữ liệu
+rồi chia cho số lượng quan sát.
+
+Mean sử dụng toàn bộ các giá trị trong tập dữ liệu.
+Tuy nhiên, mean có thể bị ảnh hưởng mạnh bởi các giá trị ngoại lệ.
+
+
+MEDIAN
+
+Median là giá trị nằm ở vị trí giữa của một tập dữ liệu
+sau khi dữ liệu được sắp xếp.
+
+Nếu số lượng quan sát là số lẻ, median là giá trị ở chính giữa.
+
+Nếu số lượng quan sát là số chẵn, median được tính bằng
+trung bình cộng của hai giá trị ở giữa.
+
+Median ít bị ảnh hưởng bởi các giá trị ngoại lệ hơn so với mean.
+
+
+MODE
+
+Mode là giá trị xuất hiện nhiều nhất trong một tập dữ liệu.
+
+Một tập dữ liệu có thể có một mode, nhiều mode hoặc không có mode
+nếu không có giá trị nào xuất hiện nhiều hơn các giá trị khác.
+
+Mode thường được sử dụng để tìm giá trị phổ biến nhất.
+
+
+VARIANCE
+
+Variance đo lường mức độ phân tán của các giá trị
+so với giá trị trung bình.
+
+Variance càng lớn thì dữ liệu thường càng phân tán rộng
+xung quanh mean.
+
+Variance càng nhỏ thì các giá trị thường nằm gần mean hơn.
+
+
+STANDARD DEVIATION
+
+Standard deviation là căn bậc hai của variance.
+
+Standard deviation cho biết mức độ phân tán của dữ liệu
+xung quanh giá trị trung bình.
+
+Standard deviation càng lớn thì dữ liệu càng phân tán.
+
+
+OUTLIER
+
+Outlier là một quan sát có giá trị khác biệt đáng kể
+so với phần lớn các quan sát còn lại.
+
+Outlier có thể ảnh hưởng mạnh đến một số thống kê,
+đặc biệt là mean và variance.
+
+Median thường ít nhạy cảm với outlier hơn mean.
