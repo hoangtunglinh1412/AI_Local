@@ -1,6 +1,44 @@
 import json
+import re
 
 from tool_registry import TOOLS
+
+
+def extract_json_string(text):
+    if not isinstance(text, str):
+        return ""
+
+    text = text.strip()
+
+    # 1. Thử parse trực tiếp nếu chuỗi đã là JSON sạch
+    try:
+        json.loads(text)
+        return text
+    except json.JSONDecodeError:
+        pass
+
+    # 2. Thử trích xuất từ markdown code block: ```json ... ``` hoặc ``` ... ```
+    match = re.search(r"```(?:json)?\s*([\s\S]*?)\s*```", text, re.IGNORECASE)
+    if match:
+        candidate = match.group(1).strip()
+        try:
+            json.loads(candidate)
+            return candidate
+        except json.JSONDecodeError:
+            pass
+
+    # 3. Thử trích xuất khối giữa ký tự { đầu tiên và } cuối cùng
+    start = text.find("{")
+    end = text.rfind("}")
+    if start != -1 and end != -1 and end > start:
+        candidate = text[start : end + 1].strip()
+        try:
+            json.loads(candidate)
+            return candidate
+        except json.JSONDecodeError:
+            pass
+
+    return text
 
 
 def parse_tool_response(
@@ -8,7 +46,7 @@ def parse_tool_response(
     data
 ):
 
-    response = response.strip()
+    response = extract_json_string(response)
 
     try:
 
@@ -117,9 +155,7 @@ def parse_tool_plan(
     data
 ):
 
-    import json
-
-    response = response.strip()
+    response = extract_json_string(response)
 
     try:
         result = json.loads(
