@@ -32,23 +32,37 @@ def load_data(filename):
 
         return None
 
+    if not os.path.isfile(file_path):
+
+        return None
+
     extension = os.path.splitext(
         file_path
     )[1].lower()
 
-    if extension == ".csv":
+    try:
 
-        data = pd.read_csv(
-            file_path
-        )
+        if extension == ".csv":
 
-    elif extension == ".xlsx":
+            data = pd.read_csv(
+                file_path
+            )
 
-        data = pd.read_excel(
-            file_path
-        )
+        elif extension == ".xlsx":
 
-    else:
+            data = pd.read_excel(
+                file_path
+            )
+
+        else:
+
+            return None
+
+    except Exception:
+
+        return None
+
+    if data is None or data.empty or data.shape[0] == 0:
 
         return None
 
