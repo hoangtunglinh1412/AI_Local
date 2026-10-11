@@ -25,6 +25,7 @@ from rag import (
 
 from rag import (
     retrieve_documents,
+    search_documents,
     list_documents,
     index_document,
     delete_document_from_database,
@@ -53,6 +54,17 @@ pending_data_filename = None
 CONVERSATION_ID = "main"
 
 SUMMARY_THRESHOLD = 20
+
+# =========================
+# RAG STATE
+# =========================
+
+# /rag on | /rag off | /rag status (mặc định: ON)
+rag_enabled = True
+
+RAG_TOP_K = 2
+
+RAG_DISTANCE_THRESHOLD = 18
 
 def get_rag_context(query):
 
@@ -422,16 +434,111 @@ def auto_summarize():
         last_message_id
     )
 
+def format_rag_context(results, distance_threshold=RAG_DISTANCE_THRESHOLD):
+    """
+    Chuyển kết quả search_documents() (định dạng ChromaDB)
+    thành (context_text, sources).
+
+    Chunk có distance > distance_threshold bị loại bỏ.
+    """
+
+    documents = (results.get("documents") or [[]])[0] or []
+    metadatas = (results.get("metadatas") or [[]])[0] or []
+    distances = (results.get("distances") or [[]])[0] or []
+
+    context_parts = []
+    sources = []
+
+    for i, document in enumerate(documents):
+
+        if not document or not document.strip():
+            continue
+
+        metadata = metadatas[i] if i < len(metadatas) and metadatas[i] else {}
+
+        distance = distances[i] if i < len(distances) else None
+
+        if distance is not None and distance > distance_threshold:
+            continue
+
+        source = {
+            "filename": metadata.get("filename", "unknown"),
+            "chunk": metadata.get("chunk", i),
+            "section": metadata.get("section", ""),
+            "distance": distance
+        }
+
+        sources.append(source)
+
+        header = f"[{len(sources)}] {source['filename']}"
+
+        if source["section"]:
+            header += f" | Section: {source['section']}"
+
+        context_parts.append(
+            header + "\n" + document.strip()
+        )
+
+    return "\n\n".join(context_parts), sources
+
+
 def get_rag_context(query):
 
-    context, sources = retrieve_documents(
-        query,
-        top_k=2
-    )
+    try:
 
-    return context, sources
+        results = search_documents(
+            query,
+            top_k=RAG_TOP_K
+        )
 
-def rebuild_system_prompt():
+    except Exception as error:
+
+        print("[RAG]: Lỗi khi truy vấn tài liệu:", error)
+
+        return "", []
+
+    return format_rag_context(results)
+
+
+def handle_rag_command(command):
+    """
+    Xử lý /rag on | /rag off | /rag status.
+    Trả về chuỗi thông báo để in ra terminal.
+    """
+
+    global rag_enabled
+
+    parts = command.strip().split()
+
+    action = parts[1].lower() if len(parts) > 1 else ""
+
+    if action == "on":
+
+        rag_enabled = True
+
+        return "[RAG] Đã BẬT tự động tìm kiếm tài liệu."
+
+    if action == "off":
+
+        rag_enabled = False
+
+        return "[RAG] Đã TẮT tìm kiếm tài liệu."
+
+    if action == "status":
+
+        status = "ON" if rag_enabled else "OFF"
+
+        return f"[RAG] Trạng thái hiện tại: {status}"
+
+    return "[RAG] Cú pháp: /rag on | /rag off | /rag status"
+
+
+def build_system_prompt(rag_context=""):
+    """
+    Tạo system prompt gồm LONG-TERM MEMORY + CONVERSATION SUMMARY.
+    Nếu có rag_context, thêm mục riêng CONTEXT TÀI LIỆU ở cuối
+    (không ghi đè memory/summary).
+    """
 
     memories = load_memories()
 
@@ -469,11 +576,67 @@ Không được nói rằng bạn biết thông tin này
 từ hệ thống memory hoặc summary.
 """
 
+    if rag_context:
+
+        new_system_prompt += f"""
+
+CONTEXT TÀI LIỆU:
+
+{rag_context}
+
+
+Nếu CONTEXT TÀI LIỆU có thông tin liên quan,
+hãy ưu tiên sử dụng thông tin trong CONTEXT TÀI LIỆU.
+
+Nếu CONTEXT TÀI LIỆU không có đủ thông tin,
+hãy trả lời dựa trên kiến thức thông thường của bạn.
+
+Không được tự ý bịa thông tin từ tài liệu.
+"""
+
+    return new_system_prompt
+
+
+def rebuild_system_prompt():
 
     messages[0] = {
         "role": "system",
-        "content": new_system_prompt
+        "content": build_system_prompt()
     }
+
+
+def stream_chat_response(chat_messages):
+    """
+    Gọi Ollama với stream=True, in từng token ra terminal
+    và trả về toàn bộ câu trả lời.
+    """
+
+    response_stream = ollama.chat(
+        model=MODEL,
+        messages=chat_messages,
+        options={
+            "num_ctx": 8192
+        },
+        stream=True
+    )
+
+    print("\nAI: ", end="", flush=True)
+
+    answer_parts = []
+
+    for chunk in response_stream:
+
+        token = chunk["message"]["content"] or ""
+
+        if token:
+
+            print(token, end="", flush=True)
+
+            answer_parts.append(token)
+
+    print()
+
+    return "".join(answer_parts)
 
 
 def reset_recent_messages():
@@ -570,17 +733,177 @@ Chỉ trả lời YES hoặc NO.
     return False
 
 
+def print_sources(sources):
+
+    print("\n===== SOURCES =====")
+
+    if len(sources) == 0:
+
+        print("Không sử dụng tài liệu.")
+
+        return
+
+    for source in sources:
+
+        print(
+            "File:",
+            source["filename"]
+        )
+
+        print(
+            "Section:",
+            source["section"]
+        )
+
+        print(
+            "Chunk:",
+            source["chunk"]
+        )
+
+        print(
+            "Distance:",
+            source["distance"]
+        )
+
+        print()
+
+
+def answer_question(question):
+    """
+    Xử lý một lượt chat thông thường:
+    RAG (nếu bật) -> stream câu trả lời -> lưu SQLite.
+
+    Context tài liệu chỉ được chèn vào system prompt của
+    lượt hiện tại (bản sao), không ghi đè messages[0].
+    """
+
+    # =========================
+    # RAG ROUTER
+    # =========================
+
+    use_rag = False
+
+    if rag_enabled:
+
+        use_rag = should_use_rag(
+            question
+        )
+
+        print(
+            "[RAG Router]:",
+            "YES" if use_rag else "NO"
+        )
+
+    else:
+
+        print("[RAG Router]: OFF")
+
+
+    # =========================
+    # CHAT MESSAGE
+    # =========================
+
+    chat_messages = messages.copy()
+
+
+    # =========================
+    # USE RAG
+    # =========================
+
+    sources = []
+
+    if use_rag:
+
+        context, sources = get_rag_context(
+            question
+        )
+
+        if len(sources) == 0:
+
+            print(
+                "[RAG]: Không tìm thấy tài liệu liên quan."
+            )
+
+        else:
+
+            chat_messages[0] = {
+                "role": "system",
+                "content": build_system_prompt(context)
+            }
+
+    chat_messages.append({
+        "role": "user",
+        "content": question
+    })
+
+
+    # =========================
+    # CALL QWEN (STREAMING)
+    # =========================
+
+    answer = stream_chat_response(
+        chat_messages
+    )
+
+
+    # =========================
+    # SAVE USER QUESTION
+    # =========================
+
+    save_message(
+        CONVERSATION_ID,
+        "user",
+        question
+    )
+
+    messages.append({
+        "role": "user",
+        "content": question
+    })
+
+
+    # =========================
+    # SHOW SOURCES
+    # =========================
+
+    print_sources(sources)
+
+
+    # =========================
+    # SAVE AI RESPONSE
+    # =========================
+
+    save_message(
+        CONVERSATION_ID,
+        "assistant",
+        answer
+    )
+
+    messages.append({
+        "role": "assistant",
+        "content": answer
+    })
+
+    return answer
+
+
 # =========================
 # START CHAT
 # =========================
 
-print("=" * 50)
-print("LOCAL CHATGPT - QWEN3 8B")
-print("Gõ 'exit' để thoát.")
-print("=" * 50)
+# Chỉ chạy vòng lặp chat khi chạy trực tiếp `python chatbot.py`.
+# Khi import (ví dụ từ tests/), vòng lặp không chạy.
+RUN_CHAT_LOOP = __name__ == "__main__"
+
+if RUN_CHAT_LOOP:
+
+    print("=" * 50)
+    print("LOCAL CHATGPT - QWEN3 8B")
+    print("Gõ 'exit' để thoát.")
+    print("=" * 50)
 
 
-while True:
+while RUN_CHAT_LOOP:
 
     question = input("\nBạn: ")
 
@@ -609,6 +932,19 @@ while True:
                 "\n[Data Agent] "
                 "Không có yêu cầu nào đang chờ."
             )
+
+        continue
+    # =========================
+    # /rag on | /rag off | /rag status
+    # =========================
+
+    rag_command = question.strip().lower()
+
+    if rag_command == "/rag" or rag_command.startswith("/rag "):
+
+        print(
+            "\n" + handle_rag_command(question)
+        )
 
         continue
     # =========================
@@ -1339,171 +1675,12 @@ while True:
 
 
     # =========================
-    # RAG ROUTER
+    # CHAT TURN (RAG + STREAMING + SAVE)
     # =========================
 
-    use_rag = should_use_rag(
+    answer_question(
         question
     )
-
-    print(
-        "[RAG Router]:",
-        "YES" if use_rag else "NO"
-    )
-
-
-    # =========================
-    # CHAT MESSAGE
-    # =========================
-
-    chat_messages = messages.copy()
-
-
-    # =========================
-    # USE RAG
-    # =========================
-
-    sources = []
-
-    if use_rag:
-
-        context, sources = get_rag_context(
-            question
-        )
-
-        if len(sources) == 0:
-
-            print(
-                "[RAG]: Không tìm thấy tài liệu liên quan."
-            )
-
-        rag_prompt = f"""
-    Hãy trả lời câu hỏi của người dùng.
-
-    Nếu CONTEXT có thông tin liên quan,
-    hãy ưu tiên sử dụng thông tin trong CONTEXT.
-
-    Nếu CONTEXT không có đủ thông tin,
-    hãy trả lời dựa trên kiến thức thông thường của bạn.
-
-    Không được tự ý bịa thông tin từ tài liệu.
-
-    CONTEXT:
-
-    {context}
-
-    CÂU HỎI:
-
-    {question}
-    """
-
-        chat_messages.append({
-            "role": "user",
-            "content": rag_prompt
-        })
-
-
-    # =========================
-    # NORMAL CHAT
-    # =========================
-
-    else:
-
-        chat_messages.append({
-            "role": "user",
-            "content": question
-        })
-
-
-    # =========================
-    # CALL QWEN
-    # =========================
-
-    response = ollama.chat(
-        model=MODEL,
-        messages=chat_messages,
-        options={
-            "num_ctx": 8192
-        }
-    )
-
-    answer = response["message"]["content"]
-
-
-    # =========================
-    # SAVE USER QUESTION
-    # =========================
-
-    save_message(
-        CONVERSATION_ID,
-        "user",
-        question
-    )
-
-    messages.append({
-        "role": "user",
-        "content": question
-    })
-
-
-    # =========================
-    # SHOW AI RESPONSE
-    # =========================
-
-    print("\nAI:", answer)
-
-
-    # =========================
-    # SHOW SOURCES
-    # =========================
-
-    print("\n===== SOURCES =====")
-
-    if len(sources) == 0:
-
-        print("Không sử dụng tài liệu.")
-
-    else:
-
-        for source in sources:
-
-            print(
-                "File:",
-                source["filename"]
-            )
-
-            print(
-                "Section:",
-                source["section"]
-            )
-
-            print(
-                "Chunk:",
-                source["chunk"]
-            )
-
-            print(
-                "Distance:",
-                source["distance"]
-            )
-
-            print()
-
-
-    # =========================
-    # SAVE AI RESPONSE
-    # =========================
-
-    save_message(
-        CONVERSATION_ID,
-        "assistant",
-        answer
-    )
-
-    messages.append({
-        "role": "assistant",
-        "content": answer
-    })
 
     # =========================
     # AUTO SUMMARIZATION

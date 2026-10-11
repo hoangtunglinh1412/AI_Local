@@ -1,4 +1,5 @@
 import os
+import re
 import ollama
 import chromadb
 
@@ -212,10 +213,165 @@ def load_documents():
 
     return documents
 
+# =========================
+# RECURSIVE CHARACTER SPLITTING
+# =========================
+
+# Thứ tự phân cấp: đoạn văn -> dòng -> câu -> khoảng trắng.
+# Mỗi phần tử: (regex dùng để tách, chuỗi dùng để nối lại).
+SPLIT_LEVELS = [
+    (re.compile(r"\n[ \t]*\n\s*"), "\n\n"),
+    (re.compile(r"\n"), "\n"),
+    (re.compile(r"(?<=[.?!])\s+"), " "),
+    (re.compile(r"\s+"), " ")
+]
+
+# Ranh giới dùng để căn đầu phần overlap (cuối câu hoặc xuống dòng).
+OVERLAP_BOUNDARY = re.compile(r"[.?!]\s+|\n+")
+
+
+def _recursive_segments(text, chunk_size, level=0):
+    """
+    Tách text thành các segment có độ dài <= chunk_size.
+
+    Trả về list (separator_before, segment_text).
+    separator_before của phần tử đầu tiên luôn là "".
+
+    Chỉ chuyển xuống cấp tách thấp hơn khi một phần
+    vẫn còn dài hơn chunk_size. Một từ đơn dài hơn
+    chunk_size được giữ nguyên (không cắt giữa từ).
+    """
+
+    text = text.strip()
+
+    if not text:
+        return []
+
+    if len(text) <= chunk_size or level >= len(SPLIT_LEVELS):
+        return [("", text)]
+
+    pattern, separator = SPLIT_LEVELS[level]
+
+    segments = []
+
+    for part in pattern.split(text):
+
+        sub_segments = _recursive_segments(
+            part,
+            chunk_size,
+            level + 1
+        )
+
+        if not sub_segments:
+            continue
+
+        first_text = sub_segments[0][1]
+
+        segments.append(
+            (separator if segments else "", first_text)
+        )
+
+        segments.extend(sub_segments[1:])
+
+    return segments
+
+
+def _get_overlap(text, overlap):
+    """
+    Lấy phần cuối của chunk trước (tối đa overlap ký tự)
+    để lặp lại ở đầu chunk sau.
+
+    Ưu tiên bắt đầu tại đầu một câu/dòng; nếu không có
+    thì bắt đầu tại đầu một từ. Không bao giờ cắt giữa từ.
+    """
+
+    if overlap <= 0 or not text:
+        return ""
+
+    if len(text) <= overlap:
+        return text.strip()
+
+    tail = text[-overlap:]
+
+    # Nếu cửa sổ bắt đầu giữa một từ, bỏ phần từ bị cắt.
+    if not text[-overlap - 1].isspace() and not tail[0].isspace():
+
+        match = re.search(r"\s", tail)
+
+        if match is None:
+            return ""
+
+        tail = tail[match.end():]
+
+    # Ưu tiên bắt đầu tại ranh giới câu/dòng.
+    match = OVERLAP_BOUNDARY.search(tail)
+
+    if match is not None and tail[match.end():].strip():
+        tail = tail[match.end():]
+
+    return tail.strip()
+
+
+def _merge_segments(segments, chunk_size, overlap):
+    """
+    Gộp các segment liên tiếp thành chunk <= chunk_size,
+    có overlap giữa hai chunk liên tiếp.
+    """
+
+    chunks = []
+
+    current = ""
+
+    for separator, segment in segments:
+
+        if not current:
+
+            current = segment
+
+        elif len(current) + len(separator) + len(segment) <= chunk_size:
+
+            current += separator + segment
+
+        else:
+
+            chunks.append(current)
+
+            overlap_text = _get_overlap(
+                current,
+                overlap
+            )
+
+            if (
+                overlap_text
+                and len(overlap_text) + len(separator) + len(segment)
+                <= chunk_size
+            ):
+
+                current = overlap_text + separator + segment
+
+            else:
+
+                current = segment
+
+    if current:
+        chunks.append(current)
+
+    return chunks
+
+
 def split_text(
     text,
-    max_chunk_size=1000
+    chunk_size=800,
+    overlap=150
 ):
+
+    if chunk_size <= 0:
+        raise ValueError("chunk_size phải lớn hơn 0.")
+
+    if overlap < 0 or overlap >= chunk_size:
+        raise ValueError("overlap phải >= 0 và nhỏ hơn chunk_size.")
+
+    text = text.replace("\r\n", "\n").replace("\r", "\n")
 
     lines = text.split("\n")
 
@@ -228,16 +384,15 @@ def split_text(
 
         line = line.strip()
 
-        if not line:
-            continue
-
         if line.isupper() and len(line) > 2:
 
-            if len(current_lines) > 0:
+            section_text = "\n".join(current_lines).strip()
+
+            if section_text:
 
                 sections.append({
                     "section": current_section,
-                    "text": "\n".join(current_lines)
+                    "text": section_text
                 })
 
             current_section = line
@@ -249,48 +404,36 @@ def split_text(
 
         else:
 
+            # Giữ cả dòng trống để còn ranh giới đoạn văn (\n\n).
             current_lines.append(line)
 
-    if len(current_lines) > 0:
+    section_text = "\n".join(current_lines).strip()
+
+    if section_text:
 
         sections.append({
             "section": current_section,
-            "text": "\n".join(current_lines)
+            "text": section_text
         })
 
     chunks = []
 
     for section in sections:
 
-        section_name = section["section"]
-        lines = section["text"].split("\n")
+        segments = _recursive_segments(
+            section["text"],
+            chunk_size
+        )
 
-        current_chunk = ""
-
-        for line in lines:
-
-            if not current_chunk:
-
-                current_chunk = line
-
-            elif len(current_chunk) + len(line) + 1 <= max_chunk_size:
-
-                current_chunk += "\n" + line
-
-            else:
-
-                chunks.append({
-                    "text": current_chunk,
-                    "section": section_name
-                })
-
-                current_chunk = line
-
-        if current_chunk:
+        for chunk_text in _merge_segments(
+            segments,
+            chunk_size,
+            overlap
+        ):
 
             chunks.append({
-                "text": current_chunk,
-                "section": section_name
+                "text": chunk_text,
+                "section": section["section"]
             })
 
     return chunks

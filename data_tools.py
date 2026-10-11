@@ -194,4 +194,4 @@ def tool_min_by_group(
     if result.get("no_valid_values", False):
         return result
 
-    return result
+    return result
