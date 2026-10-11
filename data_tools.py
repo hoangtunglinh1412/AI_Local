@@ -4,6 +4,7 @@ from data_analyzer import (
     analyze_statistics,
     analyze_group,
     analyze_max_by_group,
+    analyze_min_by_group,
     detect_outliers,
     analyze_correlation
 )
@@ -172,3 +173,25 @@ def tool_max_by_group(
         return result
 
     return result
+
+def tool_min_by_group(
+    data,
+    group_column,
+    value_column
+):
+    result = analyze_min_by_group(
+        data,
+        group_column,
+        value_column
+    )
+
+    if result is None:
+        return (
+            "Không thể phân tích. "
+            "Hãy kiểm tra tên cột."
+        )
+
+    if result.get("no_valid_values", False):
+        return result
+
+    return result

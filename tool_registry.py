@@ -2,6 +2,7 @@ from data_tools import (
     tool_statistics,
     tool_group_analysis,
     tool_max_by_group,
+    tool_min_by_group,
     tool_outliers,
     tool_correlation
 )
@@ -50,6 +51,25 @@ TOOLS = {
             "Sử dụng khi người dùng yêu cầu "
             "xác định nhóm hoặc thành phố "
             "có giá trị cao nhất."
+        ),
+
+        "parameters": [
+            "data",
+            "group_column",
+            "value_column"
+        ]
+    },
+
+    "min_by_group": {
+
+        "function": tool_min_by_group,
+
+        "description": (
+            "Tìm nhóm có giá trị nhỏ nhất "
+            "của một cột số. "
+            "Sử dụng khi người dùng yêu cầu "
+            "xác định nhóm hoặc thành phố "
+            "có giá trị thấp nhất hoặc nhỏ nhất."
         ),
 
         "parameters": [

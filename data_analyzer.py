@@ -169,6 +169,57 @@ def analyze_max_by_group(
     "missing_group_count": missing_group_count
     }
 
+def analyze_min_by_group(
+    data,
+    group_column,
+    value_column
+):
+    if group_column not in data.columns:
+        return None
+
+    if value_column not in data.columns:
+        return None
+
+    if not pd.api.types.is_numeric_dtype(
+        data[value_column]
+    ):
+        return None
+
+    missing_count = data[value_column].isnull().sum()
+
+    missing_group_count = data[group_column].isnull().sum()
+
+    valid_count = data[value_column].notnull().sum()
+
+    if valid_count == 0:
+        return {
+            "groups": [],
+            "min_value": None,
+            "missing_count": missing_count,
+            "no_valid_values": True
+        }
+
+    result = (
+        data.groupby(group_column)[value_column]
+        .min()
+    )
+
+    if result.empty:
+        return None
+
+    min_value = result.min()
+
+    groups = result[
+        result == min_value
+    ].index.tolist()
+
+    return {
+        "groups": groups,
+        "min_value": min_value,
+        "missing_count": missing_count,
+        "missing_group_count": missing_group_count
+    }
+
 def detect_outliers(data):
 
     numeric_data = data.select_dtypes(
