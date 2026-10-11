@@ -169,7 +169,7 @@ def tool_max_by_group(
             "Hãy kiểm tra tên cột."
         )
 
-    if result.get("no_valid_values", False):
+    if result.get("no _valid_values", False):
         return result
 
     return result

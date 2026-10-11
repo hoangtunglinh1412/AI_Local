@@ -20,12 +20,8 @@ from memory import load_messages_after
 
 from rag import (
     retrieve_documents,
-    get_document_list
-)
-
-from rag import (
-    retrieve_documents,
     search_documents,
+    get_document_list,
     list_documents,
     index_document,
     delete_document_from_database,
@@ -65,16 +61,6 @@ rag_enabled = True
 RAG_TOP_K = 2
 
 RAG_DISTANCE_THRESHOLD = 18
-
-def get_rag_context(query):
-
-    context, sources = retrieve_documents(
-        query,
-        top_k=3,
-        distance_threshold=18
-    )
-
-    return context, sources
 
 # =========================
 # CREATE DATABASE
@@ -1487,22 +1473,22 @@ while RUN_CHAT_LOOP:
         )
 
         continue
-        # =========================
-        # /remember
-        # =========================
 
-        if question.startswith("/remember "):
+    # =========================
+    # /remember
+    # =========================
 
-            memory = question[10:]
+    if question.startswith("/remember "):
 
-            save_memory(memory)
+        memory = question[10:]
 
-            rebuild_system_prompt()
+        save_memory(memory)
 
-            print("\nAI: Đã ghi nhớ.")
+        rebuild_system_prompt()
 
-            continue
+        print("\nAI: Đã ghi nhớ.")
 
+        continue
 
     # =========================
     # /memory
