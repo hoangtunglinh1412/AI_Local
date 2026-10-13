@@ -39,8 +39,21 @@ def _install_fake_heavy_modules():
 
     fake_chromadb = types.ModuleType("chromadb")
 
+    fake_config = types.ModuleType("chromadb.config")
+    fake_config.Settings = mock.MagicMock(name="Settings")
+    fake_chromadb.config = fake_config
+    sys.modules["chromadb.config"] = fake_config
+
+    fake_default_collection = mock.MagicMock(name="fake_default_collection")
+    fake_default_collection.count.return_value = 1
+    fake_default_collection.get.return_value = {"ids": [], "documents": [], "metadatas": []}
+
+    fake_client_instance = mock.MagicMock(name="fake_client_instance")
+    fake_client_instance.get_or_create_collection.return_value = fake_default_collection
+
     fake_chromadb.PersistentClient = mock.MagicMock(
-        name="PersistentClient"
+        name="PersistentClient",
+        return_value=fake_client_instance
     )
 
     sys.modules["sentence_transformers"] = fake_sentence_transformers
@@ -84,4 +97,37 @@ def chatbot_module(temp_db, monkeypatch):
     })
 
     return chatbot
+
+
+@pytest.fixture
+def fake_embedding_model(monkeypatch):
+    import rag
+    import numpy as np
+
+    model = mock.MagicMock(name="embedding_model")
+    model.encode.side_effect = lambda texts: np.zeros(
+        (len(texts), 384),
+        dtype=np.float32
+    )
+
+    monkeypatch.setattr(rag, "embedding_model", model)
+    monkeypatch.setattr(rag, "get_embedding_model", lambda: model)
+    monkeypatch.setattr(rag, "_get_active_embedding_model", lambda: model)
+
+    return model
+
+
+@pytest.fixture
+def fake_collection(monkeypatch):
+    import rag
+
+    collection = mock.MagicMock(name="collection")
+    collection.count.return_value = 1
+    collection.get.return_value = {"ids": [], "documents": [], "metadatas": []}
+
+    monkeypatch.setattr(rag, "collection", collection)
+    monkeypatch.setattr(rag, "get_collection", lambda: collection)
+    monkeypatch.setattr(rag, "_get_active_collection", lambda: collection)
+
+    return collection
 

@@ -351,29 +351,6 @@ def test_split_text_on_real_document():
 # EMBEDDING + CHROMADB (MOCK)
 # =========================
 
-@pytest.fixture
-def fake_embedding_model(monkeypatch):
-
-    model = mock.MagicMock(name="embedding_model")
-
-    model.encode.side_effect = lambda texts: np.zeros(
-        (len(texts), 384),
-        dtype=np.float32
-    )
-
-    monkeypatch.setattr(rag, "embedding_model", model)
-
-    return model
-
-
-@pytest.fixture
-def fake_collection(monkeypatch):
-
-    collection = mock.MagicMock(name="collection")
-
-    monkeypatch.setattr(rag, "collection", collection)
-
-    return collection
 
 
 def test_create_embeddings_encodes_chunk_texts(fake_embedding_model):

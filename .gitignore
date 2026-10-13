@@ -2,5 +2,7 @@
 __pycache__/
 *.pyc
 chat_history.db
+chat_history.db-wal
+chat_history.db-shm
 chroma_db/
 .env

@@ -357,8 +357,8 @@ def test_answer_question_rag_on_injects_context_streams_and_saves(
 
     fake_search.assert_called_once_with(QUESTION, top_k=2)
 
-    # 1 lần router (không stream) + 1 lần trả lời chính (stream)
-    assert len(fake.non_stream_calls) == 1
+    # 0 lần router (nhờ heuristic nhanh) + 1 lần trả lời chính (stream)
+    assert len(fake.non_stream_calls) == 0
     assert len(fake.stream_calls) == 1
 
     sent_messages = fake.stream_calls[0]["messages"]
@@ -395,6 +395,28 @@ def test_answer_question_rag_on_injects_context_streams_and_saves(
     assert "AI: " + FULL_ANSWER in output
     assert "File: statistics.txt" in output
     assert "Section: MEAN" in output
+
+
+def test_answer_question_ambiguous_router_calls_llm(
+    chatbot_module
+):
+    """Câu hỏi mơ hồ (heuristic=None) sẽ gọi LLM router (1 non-stream call)."""
+    ambiguous_q = "Tôi muốn tìm hiểu thêm về vấn đề đó"
+    fake = FakeOllama(router_answer="YES")
+
+    with mock.patch("ollama.chat", side_effect=fake), \
+         mock.patch.object(
+             chatbot_module,
+             "search_documents",
+             return_value=SEARCH_RESULTS
+         ) as fake_search:
+
+        answer = chatbot_module.answer_question(ambiguous_q)
+
+    assert answer == FULL_ANSWER
+    fake_search.assert_called_once_with(ambiguous_q, top_k=2)
+    assert len(fake.non_stream_calls) == 1
+    assert len(fake.stream_calls) == 1
 
 
 def test_answer_question_rag_off_skips_router_and_search(
